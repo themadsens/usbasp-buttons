@@ -1,42 +1,29 @@
 ###############################################################################
-# Makefile for the project $(PROJECT)
+# Makefile for the project cdctiny
 ###############################################################################
 
 ## General Flags
-PROJECT = usbasp-buttons
+PROJECT = cdctiny
 
-MCU = atmega8
-#MCU = atmega16
-#MCU = atmega48
-#MCU = atmega88
-#MCU = atmega168
-#MCU = atmega328p
+MCU = attiny45
+#MCU = attiny85
 
-CLK = 12000000UL
-#CLK = 15000000UL
-#CLK = 16000000UL
-#CLK = 18000000UL
-#CLK = 20000000UL
+CLK = 16500000UL
 
-PROGRAMMER = usbtiny
-
-OUT := $(shell mkdir -p out)
-
-TARGET = out/$(PROJECT).elf
+TARGET = cdctiny.elf
 CC = avr-gcc
 
 ## Options common to compile, link and assembly rules
 COMMON = -mmcu=$(MCU) -DF_CPU=$(CLK)
 
-## UART_INVERT enables software-inverter (PC0 -|>o- PB0, PC1 -|>o- PB1)
-## to connect to RS-232C line directly. ( <= 2400 bps )
-## atmega8 doesn't support this
+## UART_INVERT reverses the polarity of TXD and RXD to
+## connect to RS-232C directly.
 #COMMON += -DUART_INVERT
 
 ## Compile options common for all C compilation units.
 CFLAGS = $(COMMON)
 CFLAGS += -Wall -gdwarf-2 -Os -fsigned-char
-CFLAGS += -MD -MP -MT $(*F).o -MF dep/$(@F).d -DUSBASP
+CFLAGS += -MD -MP -MT $(*F).o -MF dep/$(@F).d 
 
 ## Assembly specific flags
 ASMFLAGS = $(COMMON)
@@ -57,43 +44,49 @@ HEX_EEPROM_FLAGS += --change-section-lma .eeprom=0 --no-change-warnings
 
 
 ## Include Directories
-INCLUDES = -I"." -I"v-usb/usbdrv"
+INCLUDES =
+INCLUDES = -I".." -I"../../usbdrv" -I"../../libs-device"
 
 ## Objects that must be built in order to link
-OBJECTS = usbdrv.o usbdrvasm.o oddebug.o $(patsubst %.c,%.o, $(wildcard *.c))
-OUTOBJS = $(patsubst %, out/%, $(OBJECTS))
+OBJECTS = usbdrv.o usbdrvasm.o oddebug.o osccal.o sw-uart-asm.o sw-uart.o main.o
 
 ## Objects explicitly added by the user
 LINKONLYOBJECTS = 
 
 ## Build
-all: $(OUT) $(TARGET) out/$(PROJECT).hex out/$(PROJECT).eep out/$(PROJECT).lss size
-
-flash: all
-	avrdude -c $(PROGRAMMER) -p $(MCU) -U flash:w:out/$(PROJECT).hex
+all: $(TARGET) cdctiny45.hex cdctiny45.eep cdctiny45.lss size
 
 ## Compile
-out/usbdrvasm.o: v-usb/usbdrv/usbdrvasm.S
-	$(CC) $(INCLUDES) $(ASMFLAGS) -o $@ -c  $<
+usbdrv.o: ../../usbdrv/usbdrv.c
+	$(CC) $(INCLUDES) $(CFLAGS) -c  $<
 
-out/usbdrv.o: v-usb/usbdrv/usbdrv.c
-	$(CC) $(INCLUDES) $(CFLAGS) -o $@ -c  $<
+usbdrvasm.o: ../../usbdrv/usbdrvasm.S
+	$(CC) $(INCLUDES) $(ASMFLAGS) -c  $<
 
-out/oddebug.o: v-usb/usbdrv/oddebug.c
-	$(CC) $(INCLUDES) $(CFLAGS) -o $@ -c  $<
+oddebug.o: ../../usbdrv/oddebug.c
+	$(CC) $(INCLUDES) $(CFLAGS) -c  $<
 
-out/%.o: %.c
-	$(CC) $(INCLUDES) $(CFLAGS) -o $@ -c  $<
+osccal.o: ../../libs-device/osccal.c
+	$(CC) $(INCLUDES) $(CFLAGS) -c  $<
+
+sw-uart-asm.o: ../sw-uart-asm.S
+	$(CC) $(INCLUDES) $(ASMFLAGS) -c  $<
+
+sw-uart.o: ../sw-uart.c
+	$(CC) $(INCLUDES) $(CFLAGS) -c  $<
+
+main.o: ../main.c
+	$(CC) $(INCLUDES) $(CFLAGS) -c  $<
 
 ##Link
-$(TARGET): $(OUTOBJS)
-	 $(CC) $(LDFLAGS) $(OUTOBJS) $(LINKONLYOBJECTS) $(LIBDIRS) $(LIBS) -o $(TARGET)
+$(TARGET): $(OBJECTS)
+	 $(CC) $(LDFLAGS) $(OBJECTS) $(LINKONLYOBJECTS) $(LIBDIRS) $(LIBS) -o $(TARGET)
 
 %.hex: $(TARGET)
 	avr-objcopy -O ihex $(HEX_FLASH_FLAGS)  $< $@
 
 %.eep: $(TARGET)
-	avr-objcopy $(HEX_EEPROM_FLAGS) -O ihex $< $@ || exit 0
+	-avr-objcopy $(HEX_EEPROM_FLAGS) -O ihex $< $@ || exit 0
 
 %.lss: $(TARGET)
 	avr-objdump -h -S $< > $@
@@ -105,9 +98,8 @@ size: ${TARGET}
 ## Clean target
 .PHONY: clean
 clean:
-	rm -rf out
+	-rm -rf $(OBJECTS) cdctiny45.elf dep/* cdctiny45.hex cdctiny45.eep cdctiny45.lss
 
 ## Other dependencies
 -include $(shell mkdir dep 2>/dev/null) $(wildcard dep/*)
 
-.PHONY: all clean flash size

@@ -1,13 +1,13 @@
 ###############################################################################
-# Makefile for the project $(PROJECT)
+# Makefile for the project cdcmega
 ###############################################################################
 
 ## General Flags
-PROJECT = usbasp-buttons
+PROJECT = cdcmega
 
-MCU = atmega8
+#MCU = atmega8
 #MCU = atmega16
-#MCU = atmega48
+MCU = atmega48
 #MCU = atmega88
 #MCU = atmega168
 #MCU = atmega328p
@@ -18,11 +18,7 @@ CLK = 12000000UL
 #CLK = 18000000UL
 #CLK = 20000000UL
 
-PROGRAMMER = usbtiny
-
-OUT := $(shell mkdir -p out)
-
-TARGET = out/$(PROJECT).elf
+TARGET = cdcmega.elf
 CC = avr-gcc
 
 ## Options common to compile, link and assembly rules
@@ -36,7 +32,7 @@ COMMON = -mmcu=$(MCU) -DF_CPU=$(CLK)
 ## Compile options common for all C compilation units.
 CFLAGS = $(COMMON)
 CFLAGS += -Wall -gdwarf-2 -Os -fsigned-char
-CFLAGS += -MD -MP -MT $(*F).o -MF dep/$(@F).d -DUSBASP
+CFLAGS += -MD -MP -MT $(*F).o -MF dep/$(@F).d 
 
 ## Assembly specific flags
 ASMFLAGS = $(COMMON)
@@ -57,43 +53,42 @@ HEX_EEPROM_FLAGS += --change-section-lma .eeprom=0 --no-change-warnings
 
 
 ## Include Directories
-INCLUDES = -I"." -I"v-usb/usbdrv"
+INCLUDES = -I".." -I"../../usbdrv"
 
 ## Objects that must be built in order to link
-OBJECTS = usbdrv.o usbdrvasm.o oddebug.o $(patsubst %.c,%.o, $(wildcard *.c))
-OUTOBJS = $(patsubst %, out/%, $(OBJECTS))
+OBJECTS = usbdrv.o usbdrvasm.o oddebug.o uart.o main.o 
 
 ## Objects explicitly added by the user
 LINKONLYOBJECTS = 
 
 ## Build
-all: $(OUT) $(TARGET) out/$(PROJECT).hex out/$(PROJECT).eep out/$(PROJECT).lss size
-
-flash: all
-	avrdude -c $(PROGRAMMER) -p $(MCU) -U flash:w:out/$(PROJECT).hex
+all: $(TARGET) cdcmega.hex cdcmega.eep cdcmega.lss size
 
 ## Compile
-out/usbdrvasm.o: v-usb/usbdrv/usbdrvasm.S
-	$(CC) $(INCLUDES) $(ASMFLAGS) -o $@ -c  $<
+usbdrvasm.o: ../../usbdrv/usbdrvasm.S
+	$(CC) $(INCLUDES) $(ASMFLAGS) -c  $<
 
-out/usbdrv.o: v-usb/usbdrv/usbdrv.c
-	$(CC) $(INCLUDES) $(CFLAGS) -o $@ -c  $<
+usbdrv.o: ../../usbdrv/usbdrv.c
+	$(CC) $(INCLUDES) $(CFLAGS) -c  $<
 
-out/oddebug.o: v-usb/usbdrv/oddebug.c
-	$(CC) $(INCLUDES) $(CFLAGS) -o $@ -c  $<
+oddebug.o: ../../usbdrv/oddebug.c
+	$(CC) $(INCLUDES) $(CFLAGS) -c  $<
 
-out/%.o: %.c
-	$(CC) $(INCLUDES) $(CFLAGS) -o $@ -c  $<
+uart.o: ../uart.c
+	$(CC) $(INCLUDES) $(CFLAGS) -c  $<
+
+main.o: ../main.c
+	$(CC) $(INCLUDES) $(CFLAGS) -c  $<
 
 ##Link
-$(TARGET): $(OUTOBJS)
-	 $(CC) $(LDFLAGS) $(OUTOBJS) $(LINKONLYOBJECTS) $(LIBDIRS) $(LIBS) -o $(TARGET)
+$(TARGET): $(OBJECTS)
+	 $(CC) $(LDFLAGS) $(OBJECTS) $(LINKONLYOBJECTS) $(LIBDIRS) $(LIBS) -o $(TARGET)
 
 %.hex: $(TARGET)
 	avr-objcopy -O ihex $(HEX_FLASH_FLAGS)  $< $@
 
 %.eep: $(TARGET)
-	avr-objcopy $(HEX_EEPROM_FLAGS) -O ihex $< $@ || exit 0
+	-avr-objcopy $(HEX_EEPROM_FLAGS) -O ihex $< $@ || exit 0
 
 %.lss: $(TARGET)
 	avr-objdump -h -S $< > $@
@@ -105,9 +100,8 @@ size: ${TARGET}
 ## Clean target
 .PHONY: clean
 clean:
-	rm -rf out
+	-rm -rf $(OBJECTS) cdcmega.elf dep/* cdcmega.hex cdcmega.eep cdcmega.lss
 
 ## Other dependencies
 -include $(shell mkdir dep 2>/dev/null) $(wildcard dep/*)
 
-.PHONY: all clean flash size

@@ -17,11 +17,6 @@
 #include "uart.h"
 #include "util.h"
 
-#define LEDG_PIN    SBIT(PORTC, PC1)
-#define LEDG_OUT    SBIT(DDRC,  PC1)
-#define LEDR_PIN    SBIT(PORTC, PC0)
-#define LEDR_OUT    SBIT(DDRC,  PC0)
-
 #define LED0_PIN    SBIT(PORTC, PC2)
 #define LED0_OUT    SBIT(DDRC,  PC2)
 #define LED1_PIN    SBIT(PORTB, PB2)
@@ -48,39 +43,28 @@ int usbPuts (char *s)
   return 0;
 }
 
-u8 ledR = 0;
-u8 ledG = 0;
 int deciMilli = 0;
 u32 milliSecs = 0;
 ISR(TIMER0_OVF_vect)
 {
 	deciMilli++;
     TCNT0 = 255 - TIMERTOP;
-    LEDR_PIN = deciMilli < 2 && ledR ? 0 : 1;
-    LEDG_PIN = deciMilli < 2 && ledG ? 0 : 1;
 }
 
 uchar line[50];
 uchar *linep;
 extern void setup(void)
 {
-  linep = NULL;
-  memset(line, 0, sizeof(line));
-  milliSecs = 0;
+  linep = line;
 
   TCCR0 = BIT(CS01);    // Timer0 /8 clock prescaler
   SBIT(TIMSK, TOIE0) = 1;
-  LEDG_OUT = 1;
-  LEDG_PIN = 1;
-  LEDR_OUT = 1;
-  LEDR_PIN = 1;
 }
 
 struct { u16 d1, d2; } ledCnt[4];
 static void initPins()
 {
   memset(ledCnt, 0, sizeof(ledCnt));
-  ledR = 1;
   LED0_OUT = 1;
   LED1_OUT = 1;
   LED2_OUT = 1;
@@ -96,13 +80,9 @@ static void initPins()
   BTN3_PU = 1;
 }
 
-u32 csCnt = 0;
+int csCnt = 0;
 char str[60];
-i16 btnTime = 0;
-u16 btnMask = 0;
-u16 btnPrev = 0;
-
-#define SPRINT(fmt, ...) (sprintf_P(str, PSTR(fmt "\r\n"), ##__VA_ARGS__), str)
+#define SPRINT(fmt, ...) (sprintf(str, fmt "\n", ##__VA_ARGS__), str)
 extern void repeat(void)
 {
   csCnt++;
@@ -110,62 +90,27 @@ extern void repeat(void)
     deciMilli -= 10;
     milliSecs++;
   }
-  else {
+  else
     return;
-  }
 
-  if (0 == (milliSecs % 500)) {
-    ledG = ~ledG;
-  }
-  if (0 == (milliSecs % 5000)) {
-    usbPuts(SPRINT("HELLO %10lu %lu %d '%s' %hu %04hx", milliSecs, csCnt, linep?linep-line:0, line, btnMask, btnTime));
+  if (0 == (milliSecs % 10000)) {
+    usbPuts(SPRINT("Hello world %d", csCnt));
   }
   csCnt = 0;
-
-  // Handle buttons
-  int i, mask;
-  for (i = 0, mask=0; i < 3; i++) {
-    int b;
-    switch (i) {
-     case 0: b = BTN1_PIN==0; break;
-     case 1: b = BTN2_PIN==0; break;
-     case 2: b = BTN3_PIN==0; break;
-    }
-    mask |= (b?1:0) << i;
-  }
-  if (mask != btnMask) {
-    btnMask = mask;
-    btnTime = milliSecs & 0xffff;
-  }
-  else if ((i16)(milliSecs & 0xffff) - btnTime > 50 && btnMask != btnPrev) {
-    for (i = 0; i < 3; i++) {
-      if ((btnMask & (1<<i)) != (btnPrev & (1<<i)))
-        usbPuts(SPRINT("BUTTON%d=%d", i+1, (btnMask & (1<<i)) ? 1 : 0));
-    }
-    btnPrev = btnMask;
-  }
 
   do {
     int ch = usbGetch();
     if (ch < 0)
       return;
-    linep = linep == NULL ? line : linep + 1;
-    linep[0] = ch;
-    linep[1] = '\0';
+    linep = linep == NULL ? linep : linep + 1;
+    *linep = ch;
   } while (*linep != '\r' && *linep != '\n' && linep != line + sizeof(line) - 1);
 
   *linep = '\0';
-  linep = NULL;
 
-  if (0 == strcasecmp((char*)line, "init"))
-      initPins();
-  else {
-    usbPuts(SPRINT("ERROR '%s'", line));
-    *line = '\0';
-    return;
-  }
-  usbPuts(SPRINT("OK '%s'", line));
-  *line = '\0';
+  if (0 == strcmp(line, "init"))
+      initPins;
+
 }
 
 // vim: set sw=2 sts=2 et:

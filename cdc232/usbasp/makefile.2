@@ -1,0 +1,6 @@
+MAKECMDGOALS?=all
+
+__INIT := $(shell make -C default $(MAKECMDGOALS))
+
+$(MAKECMDGOALS):
+	@:
