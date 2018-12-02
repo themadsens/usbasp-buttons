@@ -47,6 +47,8 @@ int usbPuts (char *s)
     usbPutch(*s++);
   return 0;
 }
+char str[90];
+#define SPRINT(fmt, ...) (sprintf_P(str, PSTR(fmt "\r\n"), ##__VA_ARGS__), str)
 
 u8 ledR = 0;
 u8 ledG = 0;
@@ -60,8 +62,8 @@ ISR(TIMER0_OVF_vect)
     LEDG_PIN = deciMilli < 2 && ledG ? 0 : 1;
 }
 
-uchar line[50];
-uchar *linep;
+char line[50];
+char *linep;
 extern void setup(void)
 {
   linep = NULL;
@@ -76,11 +78,13 @@ extern void setup(void)
   LEDR_PIN = 1;
 }
 
-struct { u16 d1, d2; } ledCnt[4];
+struct { u16 p1, p2; } ledCnt[4];
+int initialised = 0;
 static void initPins()
 {
   memset(ledCnt, 0, sizeof(ledCnt));
   ledR = 1;
+
   LED0_OUT = 1;
   LED1_OUT = 1;
   LED2_OUT = 1;
@@ -94,35 +98,58 @@ static void initPins()
   BTN1_PU = 1;
   BTN2_PU = 1;
   BTN3_PU = 1;
+
+  initialised = 1;
 }
 
+int scrollMode = 0;
+void handleLed()
+{
+  if (!initialised)
+    return;
+
+  int m = 0, i;
+  if (scrollMode)
+    m = 1 << (milliSecs % 1000 / 250);
+  else {
+    for (i = 0; i < 4; i++) {
+      if (ledCnt[i].p1 == 1)
+        m |= 1 << i;
+      else if (ledCnt[i].p1 == 0)
+        ;
+      else if (ledCnt[i].p2 == 0 && (milliSecs % (ledCnt[i].p1 * 2)) < ledCnt[i].p1)
+        m |= 1 << i;
+      else if (ledCnt[i].p2 != 0 && (milliSecs % (ledCnt[i].p1 + ledCnt[i].p2)) < ledCnt[i].p1)
+        m |= 1 << i;
+    }
+  }
+  LED0_PIN = m&1 ? 1:0;
+  LED1_PIN = m&2 ? 1:0;
+  LED2_PIN = m&4 ? 1:0;
+  LED3_PIN = m&8 ? 1:0;
+}
+
+void handleLedCmd(int led, const char *par)
+{
+  char *cp = strchr(par, ',') ? strchr(par, ',') + 1 : NULL;
+  ledCnt[led].p1 = ledCnt[led].p2 = 0;
+  while (*par >= '0' && *par <= '9')
+    ledCnt[led].p1 = ledCnt[led].p1 * 10 + (*par++) - '0';
+  while (cp && *cp >= '0' && *cp <= '9')
+    ledCnt[led].p2 = ledCnt[led].p2 * 10 + (*cp++) - '0';
+}
+
+// Handle buttons
 u32 csCnt = 0;
-char str[60];
 i16 btnTime = 0;
 u16 btnMask = 0;
 u16 btnPrev = 0;
 
-#define SPRINT(fmt, ...) (sprintf_P(str, PSTR(fmt "\r\n"), ##__VA_ARGS__), str)
-extern void repeat(void)
+void handleButtons()
 {
-  csCnt++;
-  if (deciMilli >= 10) {
-    deciMilli -= 10;
-    milliSecs++;
-  }
-  else {
+  if (!initialised)
     return;
-  }
 
-  if (0 == (milliSecs % 500)) {
-    ledG = ~ledG;
-  }
-  if (0 == (milliSecs % 5000)) {
-    usbPuts(SPRINT("HELLO %10lu %lu %d '%s' %hu %04hx", milliSecs, csCnt, linep?linep-line:0, line, btnMask, btnTime));
-  }
-  csCnt = 0;
-
-  // Handle buttons
   int i, mask;
   for (i = 0, mask=0; i < 3; i++) {
     int b;
@@ -144,12 +171,38 @@ extern void repeat(void)
     }
     btnPrev = btnMask;
   }
+}
+
+extern void repeat(void)
+{
+  csCnt++;
+  if (deciMilli >= 10) {
+    deciMilli -= 10;
+    milliSecs++;
+  }
+  else {
+    return;
+  }
+
+  if (0 == (milliSecs % 500)) {
+    ledG = ~ledG;
+  }
+  if (0 == (milliSecs % 5000)) {
+    usbPuts(SPRINT("HELLO %10lu %lu %d '%s' %hu %d,%d,%d", milliSecs, csCnt, linep?linep-line:0, line, btnMask, 
+                                                        ledCnt[0].p1, ledCnt[0].p2, (milliSecs % (ledCnt[0].p1 * 2))));
+  }
+  csCnt = 0;
+
+  handleButtons();
+  handleLed();
 
   do {
     int ch = usbGetch();
     if (ch < 0)
       return;
     linep = linep == NULL ? line : linep + 1;
+    if (linep >= line+sizeof(line)-2)
+      linep = line + sizeof(line) - 2;
     linep[0] = ch;
     linep[1] = '\0';
   } while (*linep != '\r' && *linep != '\n' && linep != line + sizeof(line) - 1);
@@ -157,8 +210,14 @@ extern void repeat(void)
   *linep = '\0';
   linep = NULL;
 
-  if (0 == strcasecmp((char*)line, "init"))
-      initPins();
+  if (0 == strcasecmp_P(line, PSTR("init")))
+    initPins();
+  else if (0 == strncasecmp_P(line, PSTR("led"), 3) && line[3] >= '0' && line[3] <= '3' && line[4] == '=')
+    handleLedCmd(line[3]-'0', line+5);
+  else if (0 == strncasecmp_P(line, PSTR("scroll="), 7) && line[7] >= '0' && line[7] <= '1')
+    scrollMode = line[7] == '1';
+  else if (0 == strcasecmp_P(line, PSTR("help")) || line[0] == '?' || 0 == line[0])
+    usbPuts(SPRINT("use:\r\n  init\r\n  scroll=1|0\r\n  ledN=0|1\r\n  ledN=ms1[,ms2]"));
   else {
     usbPuts(SPRINT("ERROR '%s'", line));
     *line = '\0';

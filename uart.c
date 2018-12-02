@@ -79,8 +79,7 @@ void doUsbTx(void )
 
 void uartPoll(void)
 {
-    repeat();
-
     doUsbTx();
+    repeat();
 }
 
