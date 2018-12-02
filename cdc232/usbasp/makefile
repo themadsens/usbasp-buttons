@@ -1,4 +1,0 @@
-MAKECMDGOALS?=all
-
-$(MAKECMDGOALS):
-	make -C default $(MAKECMDGOALS)
