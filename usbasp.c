@@ -175,6 +175,7 @@ void handleButtons()
 
 extern void repeat(void)
 {
+  int msIn = deciMilli;
   csCnt++;
   if (deciMilli >= 10) {
     deciMilli -= 10;
@@ -187,25 +188,30 @@ extern void repeat(void)
   if (0 == (milliSecs % 500)) {
     ledG = ~ledG;
   }
-  if (0 == (milliSecs % 5000)) {
-    usbPuts(SPRINT("HELLO %10lu %lu %d '%s' %hu %d,%d,%d", milliSecs, csCnt, linep?linep-line:0, line, btnMask, 
-                                                        ledCnt[0].p1, ledCnt[0].p2, (milliSecs % (ledCnt[0].p1 * 2))));
-  }
-  csCnt = 0;
 
   handleButtons();
   handleLed();
 
+  int ch;
   do {
-    int ch = usbGetch();
+    ch = usbGetch();
     if (ch < 0)
-      return;
+      break;
     linep = linep == NULL ? line : linep + 1;
     if (linep >= line+sizeof(line)-2)
       linep = line + sizeof(line) - 2;
     linep[0] = ch;
     linep[1] = '\0';
   } while (*linep != '\r' && *linep != '\n' && linep != line + sizeof(line) - 1);
+
+  if (0 == (milliSecs % 5000)) {
+    usbPuts(SPRINT("HELLO %10lu %lu %d '%s' %hu %d/%d %d,%d,%d", milliSecs, csCnt, linep?linep-line:0, line, btnMask, 
+                                                        deciMilli, msIn,
+                                                        ledCnt[0].p1, ledCnt[0].p2, (milliSecs % (ledCnt[0].p1 * 2))));
+  }
+  csCnt = 0;
+  if (ch < 0)
+    return;
 
   *linep = '\0';
   linep = NULL;
