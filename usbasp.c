@@ -52,6 +52,9 @@ char str[90];
 
 u8 ledR = 0;
 u8 ledG = 0;
+u8 led1 = 0;
+u8 led2 = 0;
+u8 led3 = 0;
 int deciMilli = 0;
 u32 milliSecs = 0;
 ISR(TIMER0_OVF_vect)
@@ -59,7 +62,10 @@ ISR(TIMER0_OVF_vect)
 	deciMilli++;
     TCNT0 = 255 - TIMERTOP;
     LEDR_PIN = deciMilli < 2 && ledR ? 0 : 1;
-    LEDG_PIN = deciMilli < 2 && ledG ? 0 : 1;
+    LEDR_PIN = deciMilli < 2 && ledR ? 0 : 1;
+    LED1_PIN = deciMilli < 2 && led1 ? 1 : 0;
+    LED2_PIN = deciMilli < 2 && led2 ? 1 : 0;
+    LED3_PIN = deciMilli < 2 && led3 ? 1 : 0;
 }
 
 char line[50];
@@ -124,9 +130,9 @@ void handleLed()
     }
   }
   LED0_PIN = m&1 ? 1:0;
-  LED1_PIN = m&2 ? 1:0;
-  LED2_PIN = m&4 ? 1:0;
-  LED3_PIN = m&8 ? 1:0;
+  led1 = m&2 ? 1:0;
+  led2 = m&4 ? 1:0;
+  led3 = m&8 ? 1:0;
 }
 
 void handleLedCmd(int led, const char *par)
