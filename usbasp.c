@@ -62,7 +62,7 @@ ISR(TIMER0_OVF_vect)
 	deciMilli++;
     TCNT0 = 255 - TIMERTOP;
     LEDR_PIN = deciMilli < 2 && ledR ? 0 : 1;
-    LEDR_PIN = deciMilli < 2 && ledR ? 0 : 1;
+    LEDG_PIN = deciMilli < 2 && ledG ? 0 : 1;
     LED1_PIN = deciMilli < 2 && led1 ? 1 : 0;
     LED2_PIN = deciMilli < 2 && led2 ? 1 : 0;
     LED3_PIN = deciMilli < 2 && led3 ? 1 : 0;
