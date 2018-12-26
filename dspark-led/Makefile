@@ -9,15 +9,15 @@
 
 SERIAL = `echo /dev/tty.KeySerial*`
 UISP = uisp -dprog=avr910 -dserial=$(SERIAL) -dpart=auto
-AVRDUDE = avrdude -c usbasp -P usb -p atmega8
+AVRDUDE = avrdude -c usbtiny -p attiny85
 PROJECT=usbasp-buttons
 # The two lines above are for "uisp" and the AVR910 serial programmer connected
 # to a Keyspan USB to serial converter to a Mac running Mac OS X.
 # Choose your favorite programmer and interface.
 
-COMPILE = avr-gcc -Wall -Os -Iusbdrv -I. -mmcu=atmega8 -DF_CPU=12000000L #-DDEBUG_LEVEL=2
+COMPILE = avr-gcc -Wall -Os -Iusbdrv -I. -I .. -mmcu=attiny85 -DF_CPU=16500000L #-DDEBUG_LEVEL=2
 
-OBJECTS = usbdrv/usbdrv.o usbdrv/usbdrvasm.o usbdrv/oddebug.o usbasp.o
+OBJECTS = usbdrv/usbdrv.o usbdrv/usbdrvasm.o usbdrv/oddebug.o usbled.o
 
 
 # symbolic targets:
@@ -37,7 +37,8 @@ all:	$(PROJECT).hex
 	$(COMPILE) -S $< -o $@
 
 flash:	all
-	$(AVRDUDE) -U flash:w:$(PROJECT).hex:i
+	micronucleus $(PROJECT).hex
+#	$(AVRDUDE) -U flash:w:$(PROJECT).hex:i
 #	$(UISP) --erase --upload --verify if=$(PROJECT).hex
 
 clean:
@@ -50,16 +51,12 @@ $(PROJECT).elf:	$(OBJECTS)
 $(PROJECT).hex:	$(PROJECT).elf
 	rm -f $(PROJECT).hex $(PROJECT).eep.hex
 	avr-objcopy -j .text -j .data -O ihex $(PROJECT).elf $(PROJECT).hex
-	./checksize $(PROJECT).elf 6100 960
+	../checksize $(PROJECT).elf 6500 500
 # do the checksize script as our last action to allow successful compilation
 # on Windows with WinAVR where the Unix commands will fail.
 
 size: $(PROJECT).elf
-	./checksize $(PROJECT).elf 6100 960
-
-patch-loader:
-	patch -p 1 -d USBaspLoader/ < USBaspLoader.patch
-	patch -p 1 -d micronucleus/ < micronucleus.patch
+	../checksize $(PROJECT).elf 6500 500
 
 disasm:	$(PROJECT).elf
 	avr-objdump -d $(PROJECT).elf > $(PROJECT).asm
