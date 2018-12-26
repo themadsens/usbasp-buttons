@@ -10,7 +10,7 @@
 SERIAL = `echo /dev/tty.KeySerial*`
 UISP = uisp -dprog=avr910 -dserial=$(SERIAL) -dpart=auto
 AVRDUDE = avrdude -c usbtiny -p attiny85
-PROJECT=usbasp-buttons
+PROJECT=digispark-led
 # The two lines above are for "uisp" and the AVR910 serial programmer connected
 # to a Keyspan USB to serial converter to a Mac running Mac OS X.
 # Choose your favorite programmer and interface.

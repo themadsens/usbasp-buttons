@@ -22,6 +22,7 @@
 #define USBCMD_SETLED   2
 #define USBCMD_SCROLL   3
 #define USBCMD_FETCHSTR 4
+#define USBCMD_SETDUTY  5
 
 #define LED_PIN    SBIT(PORTB, PB1)
 #define LED_OUT    SBIT(DDRB,  PB1)
@@ -39,7 +40,7 @@
 char *usbStr;
 int usbIntr (char *s, u8 btn, u8 chg)
 {
-#if 1
+#if 0
   usbStr = s;
   u8 cmd[3] = { USBINTR_READSTR, btn, chg };
   usbSetInterrupt(cmd, 3);
@@ -49,20 +50,25 @@ int usbIntr (char *s, u8 btn, u8 chg)
 char str[90];
 #define SPRINT(fmt, ...) (sprintf_P(str, PSTR(fmt "\r\n"), ##__VA_ARGS__), str)
 
+int initialised = 0;
 u8 led0 = 1;
 u8 led1 = 0;
 u8 led2 = 0;
 u8 led3 = 0;
+u8 ledDuty = 5;
 int deciMilli = 0;
 u32 milliSecs = 0;
 ISR(TIMER0_OVF_vect)
 {
 	deciMilli++;
     TCNT0 = 255 - TIMERTOP;
-    LED_PIN  = deciMilli < 9 && led0 ? 1 : 0;
-    LED1_PIN = deciMilli < 2 && led1 ? 1 : 0;
-    LED2_PIN = deciMilli < 2 && led2 ? 1 : 0;
-    LED3_PIN = deciMilli < 2 && led3 ? 1 : 0;
+    if (initialised) {
+      LED1_PIN = deciMilli <= ledDuty && led1 ? 1 : 0;
+      LED2_PIN = deciMilli <= ledDuty && led2 ? 1 : 0;
+      LED3_PIN = deciMilli <= ledDuty && led3 ? 1 : 0;
+    }
+    else
+      LED_PIN = deciMilli < ledDuty && led0 ? 1 : 0;
 }
 
 extern void setup(void)
@@ -76,7 +82,6 @@ extern void setup(void)
 }
 
 struct { u16 p1, p2; } ledCnt[3];
-int initialised = 0;
 static void initPins()
 {
   memset(ledCnt, 0, sizeof(ledCnt));
@@ -114,9 +119,9 @@ void handleLed()
         m |= 1 << i;
     }
   }
-  led1 = m&2 ? 1:0;
-  led2 = m&4 ? 1:0;
-  led3 = m&8 ? 1:0;
+  led1 = m&1 ? 1:0;
+  led2 = m&2 ? 1:0;
+  led3 = m&4 ? 1:0;
 }
 
 
@@ -154,6 +159,9 @@ uchar   usbFunctionSetup(u8 *setupData)
   else if (USBCMD_SCROLL == (rq->bRequest & 0xf)) {
     scrollMode = rq->bRequest >> 4;
   }
+  else if (USBCMD_SETDUTY == (rq->bRequest & 0xf)) {
+    ledDuty = rq->bRequest >> 4;
+  }
   else if (USBCMD_SETLED == (rq->bRequest & 0xf)) {
     int led = rq->bRequest >> 4;
     ledCnt[led].p1 = rq->wValue.bytes[1] * 0x100 + rq->wValue.bytes[0];
@@ -168,11 +176,13 @@ int main() {
   uchar i, j;
   cli();
   usbDeviceDisconnect();
+  //DDRB = ~0;
   for (j = 0; --j;) {
     for (i = 0; --i;)
       ;
   }
   usbDeviceConnect();
+  //DDRB = 0;
   usbInit();
 
   setup();

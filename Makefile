@@ -58,8 +58,8 @@ size: $(PROJECT).elf
 	./checksize $(PROJECT).elf 6100 960
 
 patch-loader:
-	patch -p 1 -d USBaspLoader/ < USBaspLoader.patch
-	patch -p 1 -d micronucleus/ < micronucleus.patch
+	@echo 'patch -p 1 -d USBaspLoader/ < USBaspLoader.patch'
+	@echo 'patch -p 1 -d micronucleus/ < micronucleus.patch'
 
 disasm:	$(PROJECT).elf
 	avr-objdump -d $(PROJECT).elf > $(PROJECT).asm

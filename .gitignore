@@ -1,3 +1,7 @@
 tags
 *.o
-usbasp-buttons.*
+*.elf
+*.bin
+*.hex
+*.asm
+
