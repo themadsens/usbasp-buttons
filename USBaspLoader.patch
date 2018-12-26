@@ -1,0 +1,146 @@
+diff --git a/Makefile.inc b/Makefile.inc
+index 537444f..93b94a8 100644
+--- a/Makefile.inc
++++ b/Makefile.inc
+@@ -1,3 +1,4 @@
++# vim: set ft=make:
+ # Name: Makefile.inc
+ # Project: USBaspLoader (updater)
+ # Author: Stephan Bärwolf
+@@ -5,7 +6,7 @@
+ # Tabsize: 4
+ # License: GNU GPL v2 (see License.txt)
+ 
+-F_CPU = 16000000
++F_CPU = 12000000
+ DEVICE = atmega8
+ 
+ # where the updating firmware should be located (starting address)
+@@ -37,7 +38,7 @@ DANGEROUS=0
+ 
+ # PROGRAMMER contains AVRDUDE options to address your programmer
+ # PROGRAMMER = -c pony-stk200
+-PROGRAMMER = -c usbasp
++PROGRAMMER = -c usbtiny
+ 
+ #  since USBaspLoader supports HAVE_BLB11_SOFTW_LOCKBIT...
+ LOCKOPT = -U lock:w:0x3f:m
+@@ -377,16 +378,16 @@ else
+ endif
+ 
+ ECHO=@echo
+-GCC=@gcc
+-MAKE=@make
++GCC=gcc
++MAKE=make
+ ifeq ($(HOSTOS), Windows_NT)
+   RM=@del /F /Q
+ else
+-  RM=@rm -f
++  RM=rm -f
+ endif
+ 
+-CC=@$(AVRPATH)avr-gcc
+-OBC=@$(AVRPATH)avr-objcopy
+-OBD=@$(AVRPATH)avr-objdump
+-SIZ=@$(AVRPATH)avr-size
++CC=$(AVRPATH)avr-gcc
++OBC=$(AVRPATH)avr-objcopy
++OBD=$(AVRPATH)avr-objdump
++SIZ=$(AVRPATH)avr-size
+ 
+diff --git a/firmware/Makefile b/firmware/Makefile
+index 8c04730..b242cbf 100644
+--- a/firmware/Makefile
++++ b/firmware/Makefile
+@@ -112,8 +112,11 @@ main.hex: main.elf main.asm $(DEPENDS)
+ 	$(ECHO) "."
+ 	$(ECHO) "."
+ 
++size: main.elf
++	$(SIZ) --mcu $(DEVICE) main.elf
++
+ disasm:	main.elf $(DEPENDS)
+ 	$(OBD) -d main.elf
+ 
+ cpp: $(DEPENDS)
+-	$(CC) $(CFLAGS) -E main.c
++	$(CC) $(CFLAGS) -E main.c -o cpp.c
+diff --git a/firmware/bootloaderconfig.h b/firmware/bootloaderconfig.h
+index 31a2479..5d07012 100644
+--- a/firmware/bootloaderconfig.h
++++ b/firmware/bootloaderconfig.h
+@@ -13,6 +13,15 @@
+ #define __bootloaderconfig_h_included__
+ #include "../misc/iofixes.h"
+ 
++
++#define JUMPER_PORT D
++#define JUMPER_BIT 0
++#define CONFIG_BOOTLOADER_LOOPCYCLES_TIMEOUT 200
++#define USB_CFG_IOPORTNAME      B
++#define USB_CFG_DMINUS_BIT      0
++#define USB_CFG_DPLUS_BIT       1
++#define CONFIG_NO__EEPROM_PAGED_ACCESS 1
++
+ /*
+ General Description:
+ This file (together with some settings in Makefile) configures the boot loader
+diff --git a/firmware/main.c b/firmware/main.c
+index 234265d..0a79fb7 100644
+--- a/firmware/main.c
++++ b/firmware/main.c
+@@ -767,7 +767,7 @@ static void initForUsbConnectivity(void)
+ int __attribute__((__noreturn__)) main(void)
+ {
+ #if ((BOOTLOADER_LOOPCYCLES_TIMEOUT) && (BOOTLOADER_CAN_EXIT))
+-    uint16_t __loopscycles;
++    uint16_t __loopscycles = 0;
+     timeout_remaining = BOOTLOADER_LOOPCYCLES_TIMEOUT;
+ #endif
+     /* initialize  */
+@@ -782,6 +782,8 @@ int __attribute__((__noreturn__)) main(void)
+     _mydelay_ms(HAVE_BOOTLOADER_ADDITIONALMSDEVICEWAIT);
+ #endif
+     if(bootLoaderCondition()){
++		PIN_DDR(C)  = 1;
++		PIN_PORT(C) |= 1;
+ #if (BOOTLOADER_CAN_EXIT)
+ #	if (USE_EXCESSIVE_ASSEMBLER)
+ asm  volatile  (
+@@ -831,8 +833,12 @@ asm  volatile  (
+ 	} else {
+ 	  __loopscycles++;
+ 	  if (!(__loopscycles)) {
+-	    if(timeout_remaining)	timeout_remaining--;
+-	    else			stayinloader&=0xf1;
++	    if(timeout_remaining) {
++			timeout_remaining--;
++			PIN_PORT(C) = (PIN_PORT(C) & 0xfe) | (timeout_remaining & 1);
++		}
++	    else
++			stayinloader&=0xf1;
+ 	  }
+ 	}
+ #endif
+@@ -891,6 +897,8 @@ asm  volatile  (
+ 
+ #if BOOTLOADER_CAN_EXIT
+         }while (stayinloader);	/* main event loop, if BOOTLOADER_CAN_EXIT*/
++		PIN_DDR(C)  = 0;
++		PIN_PORT(C) = 0;
+ #else
+         }while (1);  		/* main event loop */
+ #endif
+diff --git a/updater/Makefile b/updater/Makefile
+index 715247a..81c437e 100644
+--- a/updater/Makefile
++++ b/updater/Makefile
+@@ -6,6 +6,7 @@
+ # License: GNU GPL v2 (see License.txt)
+ 
+ include ../Makefile.inc
++PROGRAMMER = -c usbasp
+ 
+ ifeq ($(HOSTOS), Windows_NT)
+ 	# If windows we will use an script for calculating filesize.

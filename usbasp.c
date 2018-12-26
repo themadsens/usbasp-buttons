@@ -14,8 +14,14 @@
 #include <avr/pgmspace.h>   /* needed by usbdrv.h */
 #include "oddebug.h"
 #include "usbdrv.h"
-#include "uart.h"
 #include "util.h"
+
+#define USBINTR_READSTR 1
+
+#define USBCMD_INIT     1
+#define USBCMD_SETLED   2
+#define USBCMD_SCROLL   3
+#define USBCMD_FETCHSTR 4
 
 #define LEDG_PIN    SBIT(PORTC, PC1)
 #define LEDG_OUT    SBIT(DDRC,  PC1)
@@ -41,16 +47,20 @@
 #define TIMERRATE     10000
 #define TIMERTOP  F_CPU / TIMERRATE / 8
 
-int usbPuts (char *s)
+char *usbStr;
+int usbIntr (char *s, u8 btn, u8 chg)
 {
-  while (*s)
-    usbPutch(*s++);
+#if 1
+  usbStr = s;
+  u8 cmd[3] = { USBINTR_READSTR, btn, chg };
+  usbSetInterrupt(cmd, 3);
+#endif
   return 0;
 }
 char str[90];
 #define SPRINT(fmt, ...) (sprintf_P(str, PSTR(fmt "\r\n"), ##__VA_ARGS__), str)
 
-u8 ledR = 0;
+u8 ledR = 1;
 u8 ledG = 0;
 u8 led1 = 0;
 u8 led2 = 0;
@@ -68,12 +78,8 @@ ISR(TIMER0_OVF_vect)
     LED3_PIN = deciMilli < 2 && led3 ? 1 : 0;
 }
 
-char line[50];
-char *linep;
 extern void setup(void)
 {
-  linep = NULL;
-  memset(line, 0, sizeof(line));
   milliSecs = 0;
 
   TCCR0 = BIT(CS01);    // Timer0 /8 clock prescaler
@@ -82,6 +88,10 @@ extern void setup(void)
   LEDG_PIN = 1;
   LEDR_OUT = 1;
   LEDR_PIN = 1;
+
+  BTN1_PU = 1;
+  BTN2_PU = 1;
+  BTN3_PU = 1;
 }
 
 struct { u16 p1, p2; } ledCnt[4];
@@ -100,10 +110,6 @@ static void initPins()
   LED1_PIN = 0;
   LED2_PIN = 0;
   LED3_PIN = 0;
-
-  BTN1_PU = 1;
-  BTN2_PU = 1;
-  BTN3_PU = 1;
 
   initialised = 1;
 }
@@ -135,26 +141,18 @@ void handleLed()
   led3 = m&8 ? 1:0;
 }
 
-void handleLedCmd(int led, const char *par)
-{
-  char *cp = strchr(par, ',') ? strchr(par, ',') + 1 : NULL;
-  ledCnt[led].p1 = ledCnt[led].p2 = 0;
-  while (*par >= '0' && *par <= '9')
-    ledCnt[led].p1 = ledCnt[led].p1 * 10 + (*par++) - '0';
-  while (cp && *cp >= '0' && *cp <= '9')
-    ledCnt[led].p2 = ledCnt[led].p2 * 10 + (*cp++) - '0';
-}
 
 // Handle buttons
-u32 csCnt = 0;
 i16 btnTime = 0;
 u16 btnMask = 0;
 u16 btnPrev = 0;
 
 void handleButtons()
 {
+#if 0
   if (!initialised)
     return;
+#endif
 
   int i, mask;
   for (i = 0, mask=0; i < 3; i++) {
@@ -171,18 +169,22 @@ void handleButtons()
     btnTime = milliSecs & 0xffff;
   }
   else if ((i16)(milliSecs & 0xffff) - btnTime > 50 && btnMask != btnPrev) {
-    for (i = 0; i < 3; i++) {
-      if ((btnMask & (1<<i)) != (btnPrev & (1<<i)))
-        usbPuts(SPRINT("BUTTON%d=%d", i+1, (btnMask & (1<<i)) ? 1 : 0));
-    }
+    int btnChng = btnMask ^ btnPrev;
+    usbIntr(SPRINT("BTN %d,%d,%d CHG %d,%d,%d", btnMask&1, (btnMask>>1)&1, (btnMask>>2)&1,
+                                                btnChng&1, (btnChng>>1)&1, (btnChng>>2)&1), btnMask, btnChng);
     btnPrev = btnMask;
+    ledR = btnMask != 0;
+    if (!initialised) {
+      initPins();
+      ledCnt[0].p1 = 50;
+      ledCnt[0].p2 = 1950;
+    }
   }
 }
 
 extern void repeat(void)
 {
   int msIn = deciMilli;
-  csCnt++;
   if (deciMilli >= 10) {
     deciMilli -= 10;
     milliSecs++;
@@ -198,45 +200,54 @@ extern void repeat(void)
   handleButtons();
   handleLed();
 
-  int ch;
-  do {
-    ch = usbGetch();
-    if (ch < 0)
-      break;
-    linep = linep == NULL ? line : linep + 1;
-    if (linep >= line+sizeof(line)-2)
-      linep = line + sizeof(line) - 2;
-    linep[0] = ch;
-    linep[1] = '\0';
-  } while (*linep != '\r' && *linep != '\n' && linep != line + sizeof(line) - 1);
 
   if (0 == (milliSecs % 5000)) {
-    usbPuts(SPRINT("HELLO %10lu %lu %d '%s' %hu %d/%d %d,%d,%d", milliSecs, csCnt, linep?linep-line:0, line, btnMask, 
-                                                        deciMilli, msIn,
-                                                        ledCnt[0].p1, ledCnt[0].p2, (milliSecs % (ledCnt[0].p1 * 2))));
+    usbIntr(SPRINT("HELLO %10lu %lu %hu %d/%d %d,%d,%d", milliSecs, btnMask, deciMilli, msIn,
+                                                        ledCnt[0].p1, ledCnt[0].p2, (milliSecs % (ledCnt[0].p1 * 2))), 0, 0);
   }
-  csCnt = 0;
-  if (ch < 0)
-    return;
+}
 
-  *linep = '\0';
-  linep = NULL;
+uchar   usbFunctionSetup(u8 *setupData)
+{
+  usbRequest_t *rq = (usbRequest_t *) setupData;
 
-  if (0 == strcasecmp_P(line, PSTR("init")))
+  if (USBCMD_FETCHSTR == (rq->bRequest & 0xf)) {
+    usbMsgPtr = (u8*)usbStr;
+    return strlen(usbStr);
+  }
+  else if (USBCMD_INIT == (rq->bRequest & 0xf)) {
     initPins();
-  else if (0 == strncasecmp_P(line, PSTR("led"), 3) && line[3] >= '0' && line[3] <= '3' && line[4] == '=')
-    handleLedCmd(line[3]-'0', line+5);
-  else if (0 == strncasecmp_P(line, PSTR("scroll="), 7) && line[7] >= '0' && line[7] <= '1')
-    scrollMode = line[7] == '1';
-  else if (0 == strcasecmp_P(line, PSTR("help")) || line[0] == '?' || 0 == line[0])
-    usbPuts(SPRINT("use:\r\n  init\r\n  scroll=1|0\r\n  ledN=0|1\r\n  ledN=ms1[,ms2]"));
-  else {
-    usbPuts(SPRINT("ERROR '%s'", line));
-    *line = '\0';
-    return;
   }
-  usbPuts(SPRINT("OK '%s'", line));
-  *line = '\0';
+  else if (USBCMD_SCROLL == (rq->bRequest & 0xf)) {
+    scrollMode = rq->bRequest >> 4;
+  }
+  else if (USBCMD_SETLED == (rq->bRequest & 0xf)) {
+    int led = rq->bRequest >> 4;
+    ledCnt[led].p1 = rq->wValue.bytes[1] * 0x100 + rq->wValue.bytes[0];
+    ledCnt[led].p2 = rq->wIndex.bytes[1] * 0x100 + rq->wIndex.bytes[0];
+  }
+  return 0;
+}
+
+
+int main() {
+  //odDebugInit();
+  uchar i, j;
+  cli();
+  usbDeviceDisconnect();
+  for (j = 0; --j;) {
+    for (i = 0; --i;)
+      ;
+  }
+  usbDeviceConnect();
+  usbInit();
+
+  setup();
+  sei();
+  for (;;) {
+    usbPoll();
+    repeat();
+  }
 }
 
 // vim: set sw=2 sts=2 et:

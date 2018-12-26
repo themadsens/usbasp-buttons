@@ -1,113 +1,66 @@
-###############################################################################
-# Makefile for the project $(PROJECT)
-###############################################################################
+# Name: Makefile
+# Project: Remote Sensor
+# Author: Christian Starkjohann
+# Creation Date: 2005-03-20
+# Tabsize: 4
+# Copyright: (c) 2005 by OBJECTIVE DEVELOPMENT Software GmbH
+# License: GNU GPL v2 (see License.txt) or proprietary (CommercialLicense.txt)
+# This Revision: $Id$
 
-## General Flags
-PROJECT = usbasp-buttons
+SERIAL = `echo /dev/tty.KeySerial*`
+UISP = uisp -dprog=avr910 -dserial=$(SERIAL) -dpart=auto
+AVRDUDE = avrdude -c usbasp -P usb -p atmega8
+PROJECT=usbasp-buttons
+# The two lines above are for "uisp" and the AVR910 serial programmer connected
+# to a Keyspan USB to serial converter to a Mac running Mac OS X.
+# Choose your favorite programmer and interface.
 
-MCU = atmega8
-#MCU = atmega16
-#MCU = atmega48
-#MCU = atmega88
-#MCU = atmega168
-#MCU = atmega328p
+COMPILE = avr-gcc -Wall -Os -Iusbdrv -I. -mmcu=atmega8 -DF_CPU=12000000L #-DDEBUG_LEVEL=2
 
-CLK = 12000000UL
-#CLK = 15000000UL
-#CLK = 16000000UL
-#CLK = 18000000UL
-#CLK = 20000000UL
-
-PROGRAMMER = usbtiny
-
-OUT := $(shell mkdir -p out)
-
-TARGET = out/$(PROJECT).elf
-CC = avr-gcc
-
-## Options common to compile, link and assembly rules
-COMMON = -mmcu=$(MCU) -DF_CPU=$(CLK)
-
-## UART_INVERT enables software-inverter (PC0 -|>o- PB0, PC1 -|>o- PB1)
-## to connect to RS-232C line directly. ( <= 2400 bps )
-## atmega8 doesn't support this
-#COMMON += -DUART_INVERT
-
-## Compile options common for all C compilation units.
-CFLAGS = $(COMMON)
-CFLAGS += -Wall -gdwarf-2 -Os -fsigned-char
-CFLAGS += -MD -MP -MT $(*F).o -MF dep/$(@F).d -DUSBASP
-
-## Assembly specific flags
-ASMFLAGS = $(COMMON)
-ASMFLAGS += $(CFLAGS)
-ASMFLAGS += -x assembler-with-cpp -Wa,-gdwarf2
-
-## Linker flags
-LDFLAGS = $(COMMON)
-LDFLAGS += -Wl,-Map,out/$(PROJECT).map 
+OBJECTS = usbdrv/usbdrv.o usbdrv/usbdrvasm.o usbdrv/oddebug.o usbasp.o
 
 
-## Intel Hex file production flags
-HEX_FLASH_FLAGS = -R .eeprom -R .fuse -R .lock -R .signature
+# symbolic targets:
+all:	$(PROJECT).hex
 
-HEX_EEPROM_FLAGS = -j .eeprom
-HEX_EEPROM_FLAGS += --set-section-flags=.eeprom="alloc,load"
-HEX_EEPROM_FLAGS += --change-section-lma .eeprom=0 --no-change-warnings
+.c.o:
+	$(COMPILE) -c $< -o $@
 
+.S.o:
+	$(COMPILE) -x assembler-with-cpp -c $< -o $@
+# "-x assembler-with-cpp" should not be necessary since this is the default
+# file type for the .S (with capital S) extension. However, upper case
+# characters are not always preserved on Windows. To ensure WinAVR
+# compatibility define the file type manually.
 
-## Include Directories
-INCLUDES = -I"." -I"v-usb/usbdrv"
+.c.s:
+	$(COMPILE) -S $< -o $@
 
-## Objects that must be built in order to link
-OBJECTS = usbdrv.o usbdrvasm.o oddebug.o $(patsubst %.c,%.o, $(wildcard *.c))
-OUTOBJS = $(patsubst %, out/%, $(OBJECTS))
+flash:	all
+	$(AVRDUDE) -U flash:w:$(PROJECT).hex:i
+#	$(UISP) --erase --upload --verify if=$(PROJECT).hex
 
-## Objects explicitly added by the user
-LINKONLYOBJECTS = 
-
-## Build
-all: $(OUT) $(TARGET) out/$(PROJECT).hex out/$(PROJECT).eep out/$(PROJECT).lss size
-
-flash: all
-	avrdude -c $(PROGRAMMER) -p $(MCU) -U flash:w:out/$(PROJECT).hex
-
-## Compile
-out/usbdrvasm.o: v-usb/usbdrv/usbdrvasm.S
-	$(CC) $(INCLUDES) $(ASMFLAGS) -o $@ -c  $<
-
-out/usbdrv.o: v-usb/usbdrv/usbdrv.c
-	$(CC) $(INCLUDES) $(CFLAGS) -o $@ -c  $<
-
-out/oddebug.o: v-usb/usbdrv/oddebug.c
-	$(CC) $(INCLUDES) $(CFLAGS) -o $@ -c  $<
-
-out/%.o: %.c
-	$(CC) $(INCLUDES) $(CFLAGS) -o $@ -c  $<
-
-##Link
-$(TARGET): $(OUTOBJS)
-	 $(CC) $(LDFLAGS) $(OUTOBJS) $(LINKONLYOBJECTS) $(LIBDIRS) $(LIBS) -o $(TARGET)
-
-%.hex: $(TARGET)
-	avr-objcopy -O ihex $(HEX_FLASH_FLAGS)  $< $@
-
-%.eep: $(TARGET)
-	avr-objcopy $(HEX_EEPROM_FLAGS) -O ihex $< $@ || exit 0
-
-%.lss: $(TARGET)
-	avr-objdump -h -S $< > $@
-
-size: ${TARGET}
-	@echo
-	@avr-size -C --mcu=${MCU} ${TARGET}
-
-## Clean target
-.PHONY: clean
 clean:
-	rm -rf out
+	rm -f $(PROJECT).* *.o usbdrv/*.o usbdrv/oddebug.s usbdrv/usbdrv.s
 
-## Other dependencies
--include $(shell mkdir dep 2>/dev/null) $(wildcard dep/*)
+# file targets:
+$(PROJECT).elf:	$(OBJECTS)
+	$(COMPILE) -o $(PROJECT).elf $(OBJECTS)
 
-.PHONY: all clean flash size
+$(PROJECT).hex:	$(PROJECT).elf
+	rm -f $(PROJECT).hex $(PROJECT).eep.hex
+	avr-objcopy -j .text -j .data -O ihex $(PROJECT).elf $(PROJECT).hex
+	./checksize $(PROJECT).elf 6100 960
+# do the checksize script as our last action to allow successful compilation
+# on Windows with WinAVR where the Unix commands will fail.
+
+size: $(PROJECT).elf
+	./checksize $(PROJECT).elf 6100 960
+
+patch-loader:
+	patch -p 1 -d USBaspLoader/ < USBaspLoader.patch
+
+disasm:	$(PROJECT).elf
+	avr-objdump -d $(PROJECT).elf > $(PROJECT).asm
+
+.PHONY: all flash clean disasm size patch-loader
