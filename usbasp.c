@@ -60,6 +60,7 @@ int usbIntr (char *s, u8 btn, u8 chg)
 char str[90];
 #define SPRINT(fmt, ...) (sprintf_P(str, PSTR(fmt "\r\n"), ##__VA_ARGS__), str)
 
+int initialised = 0;
 u8 ledR = 1;
 u8 ledG = 0;
 u8 led1 = 0;
@@ -67,15 +68,18 @@ u8 led2 = 0;
 u8 led3 = 0;
 int deciMilli = 0;
 u32 milliSecs = 0;
-ISR(TIMER0_OVF_vect)
+//ISR(TIMER0_OVF_vect)
+static void TIMER0_OVF(void)
 {
-	deciMilli++;
-    TCNT0 = 255 - TIMERTOP;
-    LEDR_PIN = deciMilli < 2 && ledR ? 0 : 1;
-    LEDG_PIN = deciMilli < 2 && ledG ? 0 : 1;
+  deciMilli++;
+  TCNT0 -= TIMERTOP;
+  LEDR_PIN = deciMilli < 2 && ledR ? 0 : 1;
+  LEDG_PIN = deciMilli < 2 && ledG ? 0 : 1;
+  if (initialised) {
     LED1_PIN = deciMilli < 2 && led1 ? 1 : 0;
     LED2_PIN = deciMilli < 2 && led2 ? 1 : 0;
     LED3_PIN = deciMilli < 2 && led3 ? 1 : 0;
+  }
 }
 
 extern void setup(void)
@@ -83,7 +87,7 @@ extern void setup(void)
   milliSecs = 0;
 
   TCCR0 = BIT(CS01);    // Timer0 /8 clock prescaler
-  SBIT(TIMSK, TOIE0) = 1;
+  // SBIT(TIMSK, TOIE0) = 1; // Interrupts messes up v-usb. Handle from main loop
   LEDG_OUT = 1;
   LEDG_PIN = 1;
   LEDR_OUT = 1;
@@ -95,7 +99,6 @@ extern void setup(void)
 }
 
 struct { u16 p1, p2; } ledCnt[4];
-int initialised = 0;
 static void initPins()
 {
   memset(ledCnt, 0, sizeof(ledCnt));
@@ -184,6 +187,12 @@ void handleButtons()
 
 extern void repeat(void)
 {
+  if (TIFR & BIT(TOV0)) {
+    TIMER0_OVF();
+    TIFR = BIT(TOV0); // When *not* an ISR. Clear by setting the bit
+    return;
+  }
+
   int msIn = deciMilli;
   if (deciMilli >= 10) {
     deciMilli -= 10;
@@ -192,6 +201,7 @@ extern void repeat(void)
   else {
     return;
   }
+  usbPoll();
 
   if (0 == (milliSecs % 500)) {
     ledG = ~ledG;
@@ -245,7 +255,6 @@ int main() {
   setup();
   sei();
   for (;;) {
-    usbPoll();
     repeat();
   }
 }

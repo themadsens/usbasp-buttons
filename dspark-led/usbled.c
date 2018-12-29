@@ -58,17 +58,18 @@ u8 led3 = 0;
 u8 ledDuty = 5;
 int deciMilli = 0;
 u32 milliSecs = 0;
-ISR(TIMER0_OVF_vect)
+//ISR(TIMER0_OVF_vect)
+static void TIMER0_OVF(void)
 {
-	deciMilli++;
-    TCNT0 = 255 - TIMERTOP;
-    if (initialised) {
-      LED1_PIN = deciMilli <= ledDuty && led1 ? 1 : 0;
-      LED2_PIN = deciMilli <= ledDuty && led2 ? 1 : 0;
-      LED3_PIN = deciMilli <= ledDuty && led3 ? 1 : 0;
-    }
-    else
-      LED_PIN = deciMilli < ledDuty && led0 ? 1 : 0;
+  deciMilli++;
+  TCNT0 -= TIMERTOP;
+  if (initialised) {
+    LED1_PIN = deciMilli <= ledDuty && led1 ? 1 : 0;
+    LED2_PIN = deciMilli <= ledDuty && led2 ? 1 : 0;
+    LED3_PIN = deciMilli <= ledDuty && led3 ? 1 : 0;
+  }
+  else
+    LED_PIN = deciMilli < ledDuty && led0 ? 1 : 0;
 }
 
 extern void setup(void)
@@ -76,7 +77,7 @@ extern void setup(void)
   milliSecs = 0;
 
   TCCR0B = BIT(CS01);    // Timer0 /8 clock prescaler
-  SBIT(TIMSK, TOIE0) = 1;
+  // SBIT(TIMSK, TOIE0) = 1;
   LED_OUT = 1;
   LED_PIN = 1;
 }
@@ -127,6 +128,12 @@ void handleLed()
 
 extern void repeat(void)
 {
+  if (TIFR & BIT(TOV0)) {
+    TIMER0_OVF();
+    TIFR = BIT(TOV0); // When *not* an ISR. Clear by setting the bit
+    return;
+  }
+
   int msIn = deciMilli;
   if (deciMilli >= 10) {
     deciMilli -= 10;
@@ -135,9 +142,9 @@ extern void repeat(void)
   else {
     return;
   }
+  usbPoll();
 
   handleLed();
-
 
   if (0 == (milliSecs % 5000)) {
     usbIntr(SPRINT("HELLO %10lu %d/%d %d,%d,%d", milliSecs, deciMilli, msIn,
@@ -188,7 +195,6 @@ int main() {
   setup();
   sei();
   for (;;) {
-    usbPoll();
     repeat();
   }
 }
