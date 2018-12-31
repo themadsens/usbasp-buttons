@@ -18,10 +18,13 @@
 
 #define USBINTR_READSTR 1
 
-#define USBCMD_INIT     1
-#define USBCMD_SETLED   2
-#define USBCMD_SCROLL   3
-#define USBCMD_FETCHSTR 4
+#define USBCMD_INIT     0x01
+#define USBCMD_SCROLL   0x02
+#define USBCMD_FETCHSTR 0x03
+#define USBCMD_SETDUTY  0x04
+#define USBCMD_SETLED   0x10
+#define USBCMD_LEDMASK  0x0F
+#define USBCMD_NEXTCMD  0x20
 
 #define LEDG_PIN    SBIT(PORTC, PC1)
 #define LEDG_OUT    SBIT(DDRC,  PC1)
@@ -53,6 +56,7 @@ u8 ledG = 0;
 u8 led1 = 0;
 u8 led2 = 0;
 u8 led3 = 0;
+u8 ledDuty = 5;
 int deciMilli = 0;
 u32 milliSecs = 0;
 
@@ -81,12 +85,12 @@ static void TIMER0_OVF(void)
 {
   deciMilli++;
   TCNT0 -= TIMERTOP;
-  LEDR_PIN = deciMilli < 2 && ledR ? 0 : 1;
-  LEDG_PIN = deciMilli < 2 && ledG ? 0 : 1;
+  LEDR_PIN = deciMilli <= ledDuty && ledR ? 0 : 1;
+  LEDG_PIN = deciMilli <= ledDuty && ledG ? 0 : 1;
   if (initialised) {
-    LED1_PIN = deciMilli < 2 && led1 ? 1 : 0;
-    LED2_PIN = deciMilli < 2 && led2 ? 1 : 0;
-    LED3_PIN = deciMilli < 2 && led3 ? 1 : 0;
+    LED1_PIN = deciMilli <= ledDuty && led1 ? 1 : 0;
+    LED2_PIN = deciMilli <= ledDuty && led2 ? 1 : 0;
+    LED3_PIN = deciMilli <= ledDuty && led3 ? 1 : 0;
   }
 }
 
@@ -233,18 +237,21 @@ uchar   usbFunctionSetup(u8 *setupData)
   usbRequest_t *rq = (usbRequest_t *) setupData;
   intrSeq = 0;
 
-  if (USBCMD_FETCHSTR == (rq->bRequest & 0xf)) {
+  if (USBCMD_FETCHSTR == rq->bRequest) {
     usbMsgPtr = (u8*)usbStr;
     return strlen(usbStr);
   }
-  else if (USBCMD_INIT == (rq->bRequest & 0xf)) {
+  else if (USBCMD_INIT == rq->bRequest) {
     initPins();
   }
-  else if (USBCMD_SCROLL == (rq->bRequest & 0xf)) {
-    scrollMode = rq->bRequest >> 4;
+  else if (USBCMD_SCROLL == rq->bRequest) {
+    scrollMode = rq->wValue.word ? 1 : 0;
   }
-  else if (USBCMD_SETLED == (rq->bRequest & 0xf)) {
-    int led = rq->bRequest >> 4;
+  else if (USBCMD_SETDUTY == rq->bRequest) {
+    ledDuty = rq->wValue.bytes[1] * 0x100 + rq->wValue.bytes[0];
+  }
+  else if (USBCMD_SETLED == (rq->bRequest & ~USBCMD_LEDMASK)) {
+    int led = rq->bRequest & USBCMD_LEDMASK;
     ledCnt[led].p1 = rq->wValue.bytes[1] * 0x100 + rq->wValue.bytes[0];
     ledCnt[led].p2 = rq->wIndex.bytes[1] * 0x100 + rq->wIndex.bytes[0];
   }

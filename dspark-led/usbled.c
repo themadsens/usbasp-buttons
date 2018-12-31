@@ -18,11 +18,13 @@
 
 #define USBINTR_READSTR 1
 
-#define USBCMD_INIT     1
-#define USBCMD_SETLED   2
-#define USBCMD_SCROLL   3
-#define USBCMD_FETCHSTR 4
-#define USBCMD_SETDUTY  5
+#define USBCMD_INIT     0x01
+#define USBCMD_SCROLL   0x02
+#define USBCMD_FETCHSTR 0x03
+#define USBCMD_SETDUTY  0x04
+#define USBCMD_SETLED   0x10
+#define USBCMD_LEDMASK  0x0F
+#define USBCMD_NEXTCMD  0x20
 
 #define LED_PIN    SBIT(PORTB, PB1)
 #define LED_OUT    SBIT(DDRB,  PB1)
@@ -40,11 +42,9 @@
 char *usbStr;
 int usbIntr (char *s, u8 btn, u8 chg)
 {
-#if 0
   usbStr = s;
-  u8 cmd[3] = { USBINTR_READSTR, btn, chg };
-  usbSetInterrupt(cmd, 3);
-#endif
+  //u8 cmd[3] = { USBINTR_READSTR, btn, chg };
+  //usbSetInterrupt(cmd, 3);
   return 0;
 }
 char str[90];
@@ -69,7 +69,7 @@ static void TIMER0_OVF(void)
     LED3_PIN = deciMilli <= ledDuty && led3 ? 1 : 0;
   }
   else
-    LED_PIN = deciMilli < ledDuty && led0 ? 1 : 0;
+    LED_PIN = deciMilli <= ledDuty && led0 ? 1 : 0;
 }
 
 extern void setup(void)
@@ -156,21 +156,21 @@ uchar   usbFunctionSetup(u8 *setupData)
 {
   usbRequest_t *rq = (usbRequest_t *) setupData;
 
-  if (USBCMD_FETCHSTR == (rq->bRequest & 0xf)) {
+  if (USBCMD_FETCHSTR == rq->bRequest) {
     usbMsgPtr = (u8*)usbStr;
     return strlen(usbStr);
   }
-  else if (USBCMD_INIT == (rq->bRequest & 0xf)) {
+  else if (USBCMD_INIT == rq->bRequest) {
     initPins();
   }
-  else if (USBCMD_SCROLL == (rq->bRequest & 0xf)) {
-    scrollMode = rq->bRequest >> 4;
+  else if (USBCMD_SCROLL == rq->bRequest) {
+    scrollMode = rq->wValue.word ? 1 : 0;
   }
-  else if (USBCMD_SETDUTY == (rq->bRequest & 0xf)) {
-    ledDuty = rq->bRequest >> 4;
+  else if (USBCMD_SETDUTY == rq->bRequest) {
+    ledDuty = rq->wValue.bytes[1] * 0x100 + rq->wValue.bytes[0];
   }
-  else if (USBCMD_SETLED == (rq->bRequest & 0xf)) {
-    int led = rq->bRequest >> 4;
+  else if (USBCMD_SETLED == (rq->bRequest & ~USBCMD_LEDMASK)) {
+    int led = rq->bRequest & USBCMD_LEDMASK;
     ledCnt[led].p1 = rq->wValue.bytes[1] * 0x100 + rq->wValue.bytes[0];
     ledCnt[led].p2 = rq->wIndex.bytes[1] * 0x100 + rq->wIndex.bytes[0];
   }
