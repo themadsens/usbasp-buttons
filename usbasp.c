@@ -210,7 +210,7 @@ extern void repeat(void)
     return;
   }
   usbPoll();
-  if ( 0 == (milliSecs % 5) && intrSeq) {
+  if ( 0 == (milliSecs % 10) && intrSeq) {
     usbSendIntr();
   }
 
@@ -231,6 +231,7 @@ extern void repeat(void)
 uchar   usbFunctionSetup(u8 *setupData)
 {
   usbRequest_t *rq = (usbRequest_t *) setupData;
+  intrSeq = 0;
 
   if (USBCMD_FETCHSTR == (rq->bRequest & 0xf)) {
     usbMsgPtr = (u8*)usbStr;
@@ -247,7 +248,6 @@ uchar   usbFunctionSetup(u8 *setupData)
     ledCnt[led].p1 = rq->wValue.bytes[1] * 0x100 + rq->wValue.bytes[0];
     ledCnt[led].p2 = rq->wIndex.bytes[1] * 0x100 + rq->wIndex.bytes[0];
   }
-  intrSeq = 0;
   return 0;
 }
 
