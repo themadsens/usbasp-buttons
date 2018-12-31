@@ -47,19 +47,6 @@
 #define TIMERRATE     10000
 #define TIMERTOP  F_CPU / TIMERRATE / 8
 
-char *usbStr;
-int usbIntr (char *s, u8 btn, u8 chg)
-{
-#if 1
-  usbStr = s;
-  u8 cmd[3] = { USBINTR_READSTR, btn, chg };
-  usbSetInterrupt(cmd, 3);
-#endif
-  return 0;
-}
-char str[90];
-#define SPRINT(fmt, ...) (sprintf_P(str, PSTR(fmt "\r\n"), ##__VA_ARGS__), str)
-
 int initialised = 0;
 u8 ledR = 1;
 u8 ledG = 0;
@@ -68,6 +55,27 @@ u8 led2 = 0;
 u8 led3 = 0;
 int deciMilli = 0;
 u32 milliSecs = 0;
+
+char *usbStr;
+u8 intrSeq = 0;
+u8 cmd[4];
+void usbSendIntr(void)
+{
+  usbSetInterrupt(cmd, 4);
+}
+int usbIntr(char *s, u8 btn, u8 chg)
+{
+  usbStr = s;
+  intrSeq = milliSecs % 1250 / 5 + 1;
+  cmd[0] = USBINTR_READSTR;
+  cmd[1] = intrSeq;
+  cmd[2] = btn;
+  cmd[3] = chg;
+  usbSendIntr();
+  return 0;
+}
+char str[90];
+#define SPRINT(fmt, ...) (sprintf_P(str, PSTR(fmt "\r\n"), ##__VA_ARGS__), str)
 //ISR(TIMER0_OVF_vect)
 static void TIMER0_OVF(void)
 {
@@ -202,6 +210,9 @@ extern void repeat(void)
     return;
   }
   usbPoll();
+  if ( 0 == (milliSecs % 5) && intrSeq) {
+    usbSendIntr();
+  }
 
   if (0 == (milliSecs % 500)) {
     ledG = ~ledG;
@@ -236,6 +247,7 @@ uchar   usbFunctionSetup(u8 *setupData)
     ledCnt[led].p1 = rq->wValue.bytes[1] * 0x100 + rq->wValue.bytes[0];
     ledCnt[led].p2 = rq->wIndex.bytes[1] * 0x100 + rq->wIndex.bytes[0];
   }
+  intrSeq = 0;
   return 0;
 }
 
